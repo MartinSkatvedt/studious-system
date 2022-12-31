@@ -2,10 +2,83 @@ use glutin::event::{Event, WindowEvent};
 use glutin::event_loop::ControlFlow;
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
+use std::{mem, os::raw::c_void, ptr};
 
 // initial window size
 const INITIAL_SCREEN_W: u32 = 800;
 const INITIAL_SCREEN_H: u32 = 600;
+
+fn byte_size_of_array<T>(val: &[T]) -> isize {
+    std::mem::size_of_val(&val[..]) as isize
+}
+
+// Get the OpenGL-compatible pointer to an arbitrary array of numbers
+// Example usage:  pointer_to_array(my_array)
+fn pointer_to_array<T>(val: &[T]) -> *const c_void {
+    &val[0] as *const T as *const c_void
+}
+
+// Get the size of the given type in bytes
+// Example usage:  size_of::<u64>()
+fn size_of<T>() -> i32 {
+    mem::size_of::<T>() as i32
+}
+
+// Get an offset in bytes for n units of type T, represented as a relative pointer
+// Example usage:  offset::<u64>(4)
+fn offset<T>(n: u32) -> *const c_void {
+    (n * mem::size_of::<T>() as u32) as *const T as *const c_void
+}
+
+// Get a null pointer (equivalent to an offset of 0)
+// ptr::null()
+
+unsafe fn create_vao(vertices: &Vec<f32>, indices: &Vec<u32>) -> u32 {
+    // * Generate a VAO and bind it
+    let mut vao_ids: u32 = 0;
+    gl::GenVertexArrays(1, &mut vao_ids as *mut u32);
+    gl::BindVertexArray(vao_ids);
+
+    // * Generate a VBO and bind it
+    let mut vbo_ids: u32 = 0;
+    gl::GenBuffers(1, &mut vbo_ids as *mut u32);
+    gl::BindBuffer(gl::ARRAY_BUFFER, vbo_ids);
+
+    // * Fill it with data
+    gl::BufferData(
+        gl::ARRAY_BUFFER,
+        byte_size_of_array(vertices),
+        pointer_to_array(vertices),
+        gl::STATIC_DRAW,
+    );
+
+    // * Configure a VAP for the data and enable it
+    gl::VertexAttribPointer(
+        0,
+        3,
+        gl::FLOAT,
+        gl::FALSE,
+        size_of::<f32>() * 7,
+        ptr::null(),
+    );
+    gl::EnableVertexAttribArray(0);
+
+    // * Generate a IBO and bind it
+    let mut ibo_ids: u32 = 0;
+    gl::GenBuffers(1, &mut ibo_ids as *mut u32);
+    gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, ibo_ids);
+
+    // * Fill it with data
+    gl::BufferData(
+        gl::ELEMENT_ARRAY_BUFFER,
+        byte_size_of_array(indices),
+        pointer_to_array(indices),
+        gl::STATIC_DRAW,
+    );
+
+    // * Return the ID of the VAO
+    vao_ids
+}
 
 fn main() {
     let el = glutin::event_loop::EventLoop::new();
@@ -45,6 +118,23 @@ fn main() {
             gl::Enable(gl::DEBUG_OUTPUT_SYNCHRONOUS);
         }
 
+        // == // Set up your VAO around here
+        let triangle_vec: Vec<f32> = vec![
+            -0.9, 0.1, 0.0, 1.0, 0.0, 0.0, 1.0, //top left
+            -0.5, 0.1, 0.0, 1.0, 0.0, 0.0, 1.0, -0.7, 0.6, 0.0, 1.0, 0.0, 0.0, 1.0, 0.5, 0.1, 0.0,
+            0.0, 1.0, 0.0, 1.0, //top right
+            0.9, 0.1, 0.0, 0.0, 1.0, 0.0, 1.0, 0.7, 0.6, 0.0, 0.0, 1.0, 0.0, 1.0, -0.2, 0.0, 0.0,
+            0.0, 0.0, 1.0, 1.0, //middle
+            0.2, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.5, 0.0, 0.0, 0.0, 1.0, 1.0,
+        ];
+        let indices: Vec<u32> = vec![0, 1, 2, 3, 4, 5, 6, 7, 8];
+
+        let triangle_vao = unsafe { create_vao(&triangle_vec, &indices) };
+
+        unsafe {
+            gl::BindVertexArray(triangle_vao);
+        }
+
         let first_frame_time = std::time::Instant::now();
         let mut prevous_frame_time = first_frame_time;
         loop {
@@ -71,7 +161,12 @@ fn main() {
                 gl::ClearColor(0.035, 0.046, 0.078, 1.0); // night sky, full opacity
                 gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 
-                // == // Issue the necessary gl:: commands to draw your scene here
+                gl::DrawElements(
+                    gl::TRIANGLES,
+                    (triangle_vec.len() / 7) as i32,
+                    gl::UNSIGNED_INT,
+                    ptr::null(),
+                );
             }
 
             // Display the new color buffer on the display
