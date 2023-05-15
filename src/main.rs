@@ -1,37 +1,58 @@
-use glutin::event::{Event, WindowEvent};
-use glutin::event_loop::ControlFlow;
+extern crate nalgebra_glm as glm;
+use std::ptr;
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
-use std::{mem, os::raw::c_void, ptr};
+
+use glutin::event::{
+    DeviceEvent,
+    ElementState::{Pressed, Released},
+    Event, KeyboardInput,
+    VirtualKeyCode::{self, *},
+    WindowEvent,
+};
+use glutin::event_loop::ControlFlow;
 
 // initial window size
 const INITIAL_SCREEN_W: u32 = 800;
 const INITIAL_SCREEN_H: u32 = 600;
 
-fn byte_size_of_array<T>(val: &[T]) -> isize {
-    std::mem::size_of_val(&val[..]) as isize
+pub mod shader;
+pub mod utils;
+
+#[derive(Copy, Clone)]
+struct Vertex {
+    position: [f32; 3],
+    color: [f32; 4],
 }
 
-// Get the OpenGL-compatible pointer to an arbitrary array of numbers
-// Example usage:  pointer_to_array(my_array)
-fn pointer_to_array<T>(val: &[T]) -> *const c_void {
-    &val[0] as *const T as *const c_void
+impl Vertex {
+    fn flatten(&self) -> Vec<f32> {
+        let mut vec = Vec::new();
+        vec.extend_from_slice(&self.position);
+        vec.extend_from_slice(&self.color);
+        vec
+    }
 }
 
-// Get the size of the given type in bytes
-// Example usage:  size_of::<u64>()
-fn size_of<T>() -> i32 {
-    mem::size_of::<T>() as i32
+struct Triangle {
+    vertices: [Vertex; 3],
 }
 
-// Get an offset in bytes for n units of type T, represented as a relative pointer
-// Example usage:  offset::<u64>(4)
-fn offset<T>(n: u32) -> *const c_void {
-    (n * mem::size_of::<T>() as u32) as *const T as *const c_void
-}
+impl Triangle {
+    fn new(v_1: Vertex, v_2: Vertex, v_3: Vertex) -> Triangle {
+        Triangle {
+            vertices: [v_1, v_2, v_3],
+        }
+    }
 
-// Get a null pointer (equivalent to an offset of 0)
-// ptr::null()
+    fn flatten(&self) -> Vec<f32> {
+        let mut vec = Vec::new();
+        for vertex in &self.vertices {
+            vec.extend_from_slice(&vertex.flatten());
+        }
+        vec
+    }
+}
 
 unsafe fn create_vao(vertices: &Vec<f32>, indices: &Vec<u32>) -> u32 {
     // * Generate a VAO and bind it
@@ -47,21 +68,32 @@ unsafe fn create_vao(vertices: &Vec<f32>, indices: &Vec<u32>) -> u32 {
     // * Fill it with data
     gl::BufferData(
         gl::ARRAY_BUFFER,
-        byte_size_of_array(vertices),
-        pointer_to_array(vertices),
+        utils::byte_size_of_array(vertices),
+        utils::pointer_to_array(vertices),
         gl::STATIC_DRAW,
     );
 
-    // * Configure a VAP for the data and enable it
     gl::VertexAttribPointer(
+        // For the position
         0,
         3,
         gl::FLOAT,
         gl::FALSE,
-        size_of::<f32>() * 7,
+        utils::size_of::<f32>() * 7,
         ptr::null(),
     );
     gl::EnableVertexAttribArray(0);
+
+    gl::VertexAttribPointer(
+        // For the color
+        1,
+        4,
+        gl::FLOAT,
+        gl::FALSE,
+        utils::size_of::<f32>() * 7,
+        utils::offset::<f32>(3),
+    );
+    gl::EnableVertexAttribArray(1);
 
     // * Generate a IBO and bind it
     let mut ibo_ids: u32 = 0;
@@ -71,8 +103,8 @@ unsafe fn create_vao(vertices: &Vec<f32>, indices: &Vec<u32>) -> u32 {
     // * Fill it with data
     gl::BufferData(
         gl::ELEMENT_ARRAY_BUFFER,
-        byte_size_of_array(indices),
-        pointer_to_array(indices),
+        utils::byte_size_of_array(indices),
+        utils::pointer_to_array(indices),
         gl::STATIC_DRAW,
     );
 
@@ -91,8 +123,17 @@ fn main() {
         ));
     let cb = glutin::ContextBuilder::new().with_vsync(true);
     let windowed_context = cb.build_windowed(wb, &el).unwrap();
+    let arc_pressed_keys = Arc::new(Mutex::new(Vec::<VirtualKeyCode>::with_capacity(10)));
 
     let arc_window_size = Arc::new(Mutex::new((INITIAL_SCREEN_W, INITIAL_SCREEN_H, false)));
+
+    let pressed_keys = Arc::clone(&arc_pressed_keys);
+
+    // Set up shared tuple for tracking mouse movement between frames
+    let arc_mouse_delta = Arc::new(Mutex::new((0f32, 0f32)));
+    // Make a reference of this tuple to send to the render thread
+    let mouse_delta = Arc::clone(&arc_mouse_delta);
+
     // Make a reference of this tuple to send to the render thread
     let window_size = Arc::clone(&arc_window_size);
 
@@ -107,6 +148,8 @@ fn main() {
             c
         };
 
+        let mut window_aspect_ratio = INITIAL_SCREEN_W as f32 / INITIAL_SCREEN_H as f32;
+
         // Set up openGL
         unsafe {
             gl::Enable(gl::DEPTH_TEST);
@@ -118,36 +161,83 @@ fn main() {
             gl::Enable(gl::DEBUG_OUTPUT_SYNCHRONOUS);
         }
 
-        // == // Set up your VAO around here
-        let triangle_vec: Vec<f32> = vec![
-            -0.9, 0.1, 0.0, 1.0, 0.0, 0.0, 1.0, //top left
-            -0.5, 0.1, 0.0, 1.0, 0.0, 0.0, 1.0, -0.7, 0.6, 0.0, 1.0, 0.0, 0.0, 1.0, 0.5, 0.1, 0.0,
-            0.0, 1.0, 0.0, 1.0, //top right
-            0.9, 0.1, 0.0, 0.0, 1.0, 0.0, 1.0, 0.7, 0.6, 0.0, 0.0, 1.0, 0.0, 1.0, -0.2, 0.0, 0.0,
-            0.0, 0.0, 1.0, 1.0, //middle
-            0.2, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.5, 0.0, 0.0, 0.0, 1.0, 1.0,
-        ];
-        let indices: Vec<u32> = vec![0, 1, 2, 3, 4, 5, 6, 7, 8];
+        let white = [1.0, 1.0, 1.0, 1.0];
+
+        let triangle_1 = Triangle::new(
+            Vertex {
+                position: [-0.5, -0.5, 0.0],
+                color: [1.0, 0.0, 0.0, 1.0],
+            },
+            Vertex {
+                position: [0.0, -0.5, 0.0],
+                color: [1.0, 0.0, 0.0, 1.0],
+            },
+            Vertex {
+                position: [-0.5, 0.0, 0.0],
+                color: [1.0, 0.0, 0.0, 1.0],
+            },
+        )
+        .flatten();
+
+        let triangle_2 = Triangle::new(
+            Vertex {
+                position: [-0.5, 0.0, 0.0],
+                color: white,
+            },
+            Vertex {
+                position: [0.0, -0.5, 0.0],
+                color: white,
+            },
+            Vertex {
+                position: [0.0, 0.0, 0.0],
+                color: white,
+            },
+        )
+        .flatten();
+
+        let triangle_vec: Vec<f32> = vec![triangle_1, triangle_2].concat();
+        let indices: Vec<u32> = vec![0, 1, 2, 3, 4, 5];
 
         let triangle_vao = unsafe { create_vao(&triangle_vec, &indices) };
 
+        let shader = unsafe {
+            shader::ShaderBuilder::new()
+                .attach_file("./shaders/simple.vert")
+                .attach_file("./shaders/simple.frag")
+                .link()
+        };
+
         unsafe {
             gl::BindVertexArray(triangle_vao);
+            shader.activate();
         }
 
         let first_frame_time = std::time::Instant::now();
-        let mut prevous_frame_time = first_frame_time;
+        let mut previous_frame_time = first_frame_time;
+
+        let mut cam_pos: glm::Vec3 = glm::vec3(0.0, 0.0, 5.0);
+        let mut cam_dir: glm::Vec3 = glm::vec3(0.0, 0.0, 0.0);
+        let mut yaw: f32 = -90.0;
+        let mut pitch: f32 = 0.0;
+
+        let mut cam_front: glm::Vec3 = glm::vec3(0.0, 0.0, -1.0);
+        let cam_up: glm::Vec3 = glm::vec3(0.0, 1.0, 0.0);
+
+        let move_speed: f32 = 10.0;
+        let cam_speed: f32 = 100.0;
+
         loop {
             // Compute time passed since the previous frame and since the start of the program
             let now = std::time::Instant::now();
             let _elapsed = now.duration_since(first_frame_time).as_secs_f32();
-            let _delta_time = now.duration_since(prevous_frame_time).as_secs_f32();
-            prevous_frame_time = now;
+            let delta_time = now.duration_since(previous_frame_time).as_secs_f32();
+            previous_frame_time = now;
 
             // Handle resize events
             if let Ok(mut new_size) = window_size.lock() {
                 if new_size.2 {
                     context.resize(glutin::dpi::PhysicalSize::new(new_size.0, new_size.1));
+                    window_aspect_ratio = new_size.0 as f32 / new_size.1 as f32;
                     (*new_size).2 = false;
                     println!("Resized");
                     unsafe {
@@ -156,7 +246,88 @@ fn main() {
                 }
             }
 
+            // Handle keyboard input
+            if let Ok(keys) = pressed_keys.lock() {
+                for key in keys.iter() {
+                    match key {
+                        // The `VirtualKeyCode` enum is defined here:
+                        //    https://docs.rs/winit/0.25.0/winit/event/enum.VirtualKeyCode.html
+                        VirtualKeyCode::D => {
+                            //print
+                            cam_pos += move_speed
+                                * delta_time
+                                * glm::normalize(&glm::cross(&cam_front, &cam_up));
+                        }
+                        VirtualKeyCode::A => {
+                            cam_pos -= move_speed
+                                * delta_time
+                                * glm::normalize(&glm::cross(&cam_front, &cam_up));
+                        }
+
+                        VirtualKeyCode::Space => {
+                            cam_pos += move_speed * delta_time * cam_up;
+                        }
+                        VirtualKeyCode::LShift => {
+                            cam_pos -= move_speed * delta_time * cam_up;
+                        }
+
+                        VirtualKeyCode::W => {
+                            cam_pos += move_speed * delta_time * cam_front;
+                        }
+                        VirtualKeyCode::S => {
+                            cam_pos -= move_speed * delta_time * cam_front;
+                        }
+
+                        VirtualKeyCode::Up => {
+                            pitch += delta_time * cam_speed;
+                        }
+                        VirtualKeyCode::Down => {
+                            pitch -= delta_time * cam_speed;
+                        }
+
+                        VirtualKeyCode::Left => {
+                            yaw -= delta_time * cam_speed;
+                        }
+                        VirtualKeyCode::Right => {
+                            yaw += delta_time * cam_speed;
+                        }
+
+                        // default handler:
+                        _ => {}
+                    }
+                }
+            }
+            // Handle mouse movement. delta contains the x and y movement of the mouse since last frame in pixels
+            if let Ok(mut delta) = mouse_delta.lock() {
+                // == // Optionally access the acumulated mouse movement between
+                // == // frames here with `delta.0` and `delta.1`
+
+                *delta = (0.0, 0.0); // reset when done
+            }
+
             unsafe {
+                let mut transformation_matrix: glm::Mat4 = glm::identity();
+                let mut view_matrix: glm::Mat4 = glm::identity();
+                let model_matrix: glm::Mat4 = glm::identity();
+
+                cam_dir.x = yaw.to_radians().cos() * pitch.to_radians().cos();
+                cam_dir.y = pitch.to_radians().sin();
+                cam_dir.z = yaw.to_radians().sin() * pitch.to_radians().cos();
+
+                cam_front = glm::normalize(&cam_dir);
+
+                let look_at: glm::Mat4 = glm::look_at(&cam_pos, &(cam_pos + cam_front), &cam_up);
+
+                view_matrix = look_at * view_matrix;
+
+                let projection_matrix: glm::Mat4 =
+                    glm::perspective(window_aspect_ratio, glm::half_pi(), 1.0, 100.0);
+
+                transformation_matrix =
+                    projection_matrix * view_matrix * model_matrix * transformation_matrix;
+
+                gl::UniformMatrix4fv(4, 1, gl::TRUE, transformation_matrix.as_ptr());
+
                 // Clear the color and depth buffers
                 gl::ClearColor(0.035, 0.046, 0.078, 1.0); // night sky, full opacity
                 gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
@@ -215,6 +386,56 @@ fn main() {
                 ..
             } => {
                 *control_flow = ControlFlow::Exit;
+            }
+            // Keep track of currently pressed keys to send to the rendering thread
+            Event::WindowEvent {
+                event:
+                    WindowEvent::KeyboardInput {
+                        input:
+                            KeyboardInput {
+                                state: key_state,
+                                virtual_keycode: Some(keycode),
+                                ..
+                            },
+                        ..
+                    },
+                ..
+            } => {
+                if let Ok(mut keys) = arc_pressed_keys.lock() {
+                    match key_state {
+                        Released => {
+                            if keys.contains(&keycode) {
+                                let i = keys.iter().position(|&k| k == keycode).unwrap();
+                                keys.remove(i);
+                            }
+                        }
+                        Pressed => {
+                            if !keys.contains(&keycode) {
+                                keys.push(keycode);
+                            }
+                        }
+                    }
+                }
+
+                // Handle Escape and Q keys separately
+                match keycode {
+                    Escape => {
+                        *control_flow = ControlFlow::Exit;
+                    }
+                    Q => {
+                        *control_flow = ControlFlow::Exit;
+                    }
+                    _ => {}
+                }
+            }
+            Event::DeviceEvent {
+                event: DeviceEvent::MouseMotion { delta },
+                ..
+            } => {
+                // Accumulate mouse movement
+                if let Ok(mut position) = arc_mouse_delta.lock() {
+                    *position = (position.0 + delta.0 as f32, position.1 + delta.1 as f32);
+                }
             }
             _ => {}
         }

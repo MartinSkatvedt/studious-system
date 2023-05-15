@@ -11,3 +11,5 @@ authors = [
 [dependencies]
 glutin = "0.29.1"
 gl = "0.14.0"
+nalgebra-glm = "0.18.0"
+libc = "0.2.144"
