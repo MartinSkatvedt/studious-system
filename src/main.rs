@@ -309,11 +309,11 @@ fn main() {
             shininess: 32.0,
         };
 
-        let sphere_1 = Sphere::new(7, material_2);
-        let sphere_2 = Sphere::new(7, material);
-        let sphere_3 = Sphere::new(7, material_2);
+        let sphere_1 = Sphere::new(5, material_2);
+        let sphere_2 = Sphere::new(5, material);
+        let sphere_3 = Sphere::new(5, material_2);
 
-        let light_sphere = Sphere::new(6, light_material);
+        let light_sphere = Sphere::new(2, light_material);
 
         let mut scene = vec![
             scene::SceneNode {
@@ -376,6 +376,8 @@ fn main() {
             let _elapsed = now.duration_since(first_frame_time).as_secs_f32();
             let delta_time = now.duration_since(previous_frame_time).as_secs_f32();
             previous_frame_time = now;
+
+            println!("FPS: {}", 1.0 / delta_time);
 
             // Handle resize events
             if let Ok(mut new_size) = window_size.lock() {
