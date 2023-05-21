@@ -12,9 +12,9 @@ use glutin::event::{
 };
 use glutin::event_loop::ControlFlow;
 
-pub mod poly;
 pub mod scene;
-use poly::{Polyhedron, Shape, Vertex};
+pub mod shape;
+use shape::{Light, Material, Shape, Sphere};
 pub mod shader;
 pub mod utils;
 
@@ -105,7 +105,12 @@ unsafe fn create_shape_vao(shape: &Shape) -> u32 {
     vao_ids
 }
 
-unsafe fn draw_scene(nodes: &mut Vec<scene::SceneNode>, view_projection_matrix: &glm::Mat4) {
+unsafe fn draw_scene(
+    nodes: &mut Vec<scene::SceneNode>,
+    view_projection_matrix: &glm::Mat4,
+    light: &Light,
+    cam_pos: &glm::Vec3,
+) {
     for node in nodes {
         let mut model_matrix = glm::Mat4::identity();
         model_matrix = glm::translation(&glm::vec3(
@@ -125,10 +130,29 @@ unsafe fn draw_scene(nodes: &mut Vec<scene::SceneNode>, view_projection_matrix: 
 
         let transformation_matrix: glm::Mat4 = view_projection_matrix * model_matrix;
 
+        gl::UseProgram(node.shader_program);
         gl::BindVertexArray(node.vao_id);
 
         gl::UniformMatrix4fv(4, 1, gl::TRUE, transformation_matrix.as_ptr());
         gl::UniformMatrix4fv(7, 1, gl::TRUE, model_matrix.as_ptr());
+        gl::Uniform3fv(8, 1, cam_pos.as_ptr());
+
+        let material = Material {
+            ambient: glm::vec3(1.0, 0.5, 0.31),
+            diffuse: glm::vec3(1.0, 0.5, 0.31),
+            specular: glm::vec3(0.5, 0.5, 0.5),
+            shininess: 32.0,
+        };
+
+        gl::Uniform3fv(9, 1, material.ambient.as_ptr());
+        gl::Uniform3fv(10, 1, material.diffuse.as_ptr());
+        gl::Uniform3fv(11, 1, material.specular.as_ptr());
+        gl::Uniform1f(12, material.shininess);
+
+        gl::Uniform3fv(13, 1, light.position.as_ptr());
+        gl::Uniform3fv(14, 1, light.ambient.as_ptr());
+        gl::Uniform3fv(15, 1, light.diffuse.as_ptr());
+        gl::Uniform3fv(16, 1, light.specular.as_ptr());
 
         gl::DrawElements(
             gl::TRIANGLES,
@@ -188,47 +212,71 @@ fn main() {
             gl::Enable(gl::DEBUG_OUTPUT_SYNCHRONOUS);
         }
 
-        let regular_icosahedron = Polyhedron::regular_isocahedron(1.0, 6, [1.0, 0.0, 0.0, 1.0]);
-        let regular_icosahedron_2 = Polyhedron::regular_isocahedron(1.0, 6, [0.0, 1.0, 0.0, 1.0]);
-        let regular_icosahedron_3 = Polyhedron::regular_isocahedron(1.0, 6, [0.0, 0.0, 1.0, 1.0]);
+        let shape_shader = unsafe {
+            shader::ShaderBuilder::new()
+                .attach_file("./shaders/shape.vert")
+                .attach_file("./shaders/shape.frag")
+                .link()
+        };
+
+        let light_shader = unsafe {
+            shader::ShaderBuilder::new()
+                .attach_file("./shaders/light.vert")
+                .attach_file("./shaders/light.frag")
+                .link()
+        };
+
+        let sphere_1 = Sphere::new(6, [1.0, 0.5, 0.31, 1.0]);
+        let sphere_2 = Sphere::new(6, [0.0, 1.0, 0.0, 1.0]);
+        let sphere_3 = Sphere::new(6, [0.0, 0.0, 1.0, 1.0]);
+
+        let light_sphere = Sphere::new(6, [1.0, 1.0, 1.0, 1.0]);
+
+        let light = Light {
+            position: glm::vec3(0.0, 10.0, 0.0),
+            ambient: glm::vec3(0.2, 0.2, 0.2),
+            diffuse: glm::vec3(0.5, 0.5, 0.5),
+            specular: glm::vec3(1.0, 1.0, 1.0),
+        };
 
         let mut scene = vec![
             scene::SceneNode {
-                vao_id: unsafe { create_shape_vao(&regular_icosahedron.shape) },
-                index_count: regular_icosahedron.shape.index_count,
+                vao_id: unsafe { create_shape_vao(&sphere_1.shape) },
+                index_count: sphere_1.shape.index_count,
+                position: glm::vec3(-10.0, 0.0, 0.0),
+                reference_point: glm::vec3(0.0, 0.0, 0.0),
+                rotation: glm::vec3(0.0, 0.0, 0.0),
+                scale: glm::vec3(1.0, 1.0, 1.0),
+                shader_program: shape_shader.program_id,
+            },
+            scene::SceneNode {
+                vao_id: unsafe { create_shape_vao(&sphere_2.shape) },
+                index_count: sphere_2.shape.index_count,
                 position: glm::vec3(0.0, 0.0, 0.0),
                 reference_point: glm::vec3(0.0, 0.0, 0.0),
                 rotation: glm::vec3(0.0, 0.0, 0.0),
                 scale: glm::vec3(1.0, 1.0, 1.0),
+                shader_program: shape_shader.program_id,
             },
             scene::SceneNode {
-                vao_id: unsafe { create_shape_vao(&regular_icosahedron_2.shape) },
-                index_count: regular_icosahedron_2.shape.index_count,
-                position: glm::vec3(5.0, 0.0, 0.0),
+                vao_id: unsafe { create_shape_vao(&sphere_3.shape) },
+                index_count: sphere_3.shape.index_count,
+                position: glm::vec3(10.0, 10.0, 0.0),
                 reference_point: glm::vec3(0.0, 0.0, 0.0),
                 rotation: glm::vec3(0.0, 0.0, 0.0),
                 scale: glm::vec3(1.0, 1.0, 1.0),
+                shader_program: shape_shader.program_id,
             },
             scene::SceneNode {
-                vao_id: unsafe { create_shape_vao(&regular_icosahedron_3.shape) },
-                index_count: regular_icosahedron_3.shape.index_count,
-                position: glm::vec3(10.0, 0.0, 0.0),
+                vao_id: unsafe { create_shape_vao(&light_sphere.shape) },
+                index_count: light_sphere.shape.index_count,
+                position: light.position,
                 reference_point: glm::vec3(0.0, 0.0, 0.0),
                 rotation: glm::vec3(0.0, 0.0, 0.0),
                 scale: glm::vec3(1.0, 1.0, 1.0),
+                shader_program: light_shader.program_id,
             },
         ];
-
-        let shader = unsafe {
-            shader::ShaderBuilder::new()
-                .attach_file("./shaders/simple.vert")
-                .attach_file("./shaders/simple.frag")
-                .link()
-        };
-
-        unsafe {
-            shader.activate();
-        }
 
         let first_frame_time = std::time::Instant::now();
         let mut previous_frame_time = first_frame_time;
@@ -244,10 +292,7 @@ fn main() {
         let move_speed: f32 = 10.0;
         let cam_speed: f32 = 100.0;
 
-        let light = Vertex {
-            position: glm::vec3(1.0, 0.6, 1.0),
-            color: [1.0, 1.0, 1.0, 1.0],
-        };
+        let mut sphere_dir = true;
 
         loop {
             // Compute time passed since the previous frame and since the start of the program
@@ -350,20 +395,23 @@ fn main() {
 
                 transformation_matrix = projection_matrix * view_matrix * transformation_matrix;
 
-                gl::Uniform4f(
-                    5,
-                    light.color[0],
-                    light.color[1],
-                    light.color[2],
-                    light.color[3],
-                );
-                gl::Uniform3f(6, light.position.x, light.position.y, light.position.z);
-
                 // Clear the color and depth buffers
                 gl::ClearColor(0.035, 0.046, 0.078, 1.0); // night sky, full opacity
                 gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 
-                draw_scene(&mut scene, &transformation_matrix);
+                if sphere_dir {
+                    scene[0].position.y += 0.01;
+                    if scene[0].position.y > 15.0 {
+                        sphere_dir = false;
+                    }
+                } else {
+                    scene[0].position.y -= 0.01;
+                    if scene[0].position.y < -1.0 {
+                        sphere_dir = true;
+                    }
+                }
+
+                draw_scene(&mut scene, &transformation_matrix, &light, &cam_pos);
             }
 
             // Display the new color buffer on the display

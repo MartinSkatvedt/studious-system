@@ -1,5 +1,19 @@
 use lerp::Lerp;
 
+pub struct Material {
+    pub ambient: glm::Vec3,
+    pub diffuse: glm::Vec3,
+    pub specular: glm::Vec3,
+    pub shininess: f32,
+}
+
+pub struct Light {
+    pub position: glm::Vec3,
+    pub ambient: glm::Vec3,
+    pub diffuse: glm::Vec3,
+    pub specular: glm::Vec3,
+}
+
 #[derive(Copy, Clone)]
 pub struct Vertex {
     pub position: glm::Vec3,
@@ -26,17 +40,18 @@ impl Triangle {
         Triangle { a, b, c }
     }
 }
-pub struct Polyhedron {
+
+pub struct Sphere {
     vertices: Vec<Vertex>,
     triangles: Vec<Triangle>,
     pub shape: Shape,
-    shape_color: [f32; 4],
+    pub shape_color: [f32; 4],
 }
 
-impl Polyhedron {
-    pub fn regular_isocahedron(radius: f32, detail: u32, color: [f32; 4]) -> Polyhedron {
+impl Sphere {
+    pub fn new(detail: u32, color: [f32; 4]) -> Sphere {
         let phi = (1.0 + (5.0 as f32).sqrt()) / 2.0;
-        let mut regular_isocahedron = Polyhedron {
+        let mut regular_isocahedron = Sphere {
             vertices: vec![
                 Vertex {
                     position: glm::vec3(-1.0, phi, 0.0),
@@ -119,7 +134,7 @@ impl Polyhedron {
             shape_color: color,
         };
 
-        regular_isocahedron.subdivide(radius, detail);
+        regular_isocahedron.subdivide(1.0, detail);
         regular_isocahedron.triangles.drain(0..20);
         regular_isocahedron.generate_render_shape();
 
