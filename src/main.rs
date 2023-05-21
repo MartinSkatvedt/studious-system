@@ -47,36 +47,37 @@ unsafe fn create_shape_vao(shape: &Shape) -> u32 {
     );
     gl::EnableVertexAttribArray(0);
 
-    //Color buffer
-    let mut color_vbo_ids: u32 = 1;
-    gl::GenBuffers(1, &mut color_vbo_ids as *mut u32);
-    gl::BindBuffer(gl::ARRAY_BUFFER, color_vbo_ids);
+    //Ambient buffer
+    let mut ambient_vbo_ids: u32 = 1;
+    gl::GenBuffers(1, &mut ambient_vbo_ids as *mut u32);
+    gl::BindBuffer(gl::ARRAY_BUFFER, ambient_vbo_ids);
 
     gl::BufferData(
         gl::ARRAY_BUFFER,
-        utils::byte_size_of_array(&shape.colors),
-        utils::pointer_to_array(&shape.colors),
+        utils::byte_size_of_array(&shape.ambient),
+        utils::pointer_to_array(&shape.ambient),
         gl::STATIC_DRAW,
     );
 
     gl::VertexAttribPointer(
         1,
-        4,
+        3,
         gl::FLOAT,
         gl::FALSE,
-        utils::size_of::<f32>() * 4,
+        utils::size_of::<f32>() * 3,
         ptr::null(),
     );
     gl::EnableVertexAttribArray(1);
 
-    let mut normvec_vbo_ids: u32 = 1;
-    gl::GenBuffers(1, &mut normvec_vbo_ids as *mut u32);
-    gl::BindBuffer(gl::ARRAY_BUFFER, normvec_vbo_ids);
+    //Diffuse buffer
+    let mut diffuse_vbo_ids: u32 = 2;
+    gl::GenBuffers(1, &mut diffuse_vbo_ids as *mut u32);
+    gl::BindBuffer(gl::ARRAY_BUFFER, diffuse_vbo_ids);
 
     gl::BufferData(
         gl::ARRAY_BUFFER,
-        utils::byte_size_of_array(&shape.normals),
-        utils::pointer_to_array(&shape.normals),
+        utils::byte_size_of_array(&shape.diffuse),
+        utils::pointer_to_array(&shape.diffuse),
         gl::STATIC_DRAW,
     );
 
@@ -89,6 +90,72 @@ unsafe fn create_shape_vao(shape: &Shape) -> u32 {
         ptr::null(),
     );
     gl::EnableVertexAttribArray(2);
+
+    //Specular buffer
+    let mut specular_vbo_ids: u32 = 3;
+    gl::GenBuffers(1, &mut specular_vbo_ids as *mut u32);
+    gl::BindBuffer(gl::ARRAY_BUFFER, specular_vbo_ids);
+
+    gl::BufferData(
+        gl::ARRAY_BUFFER,
+        utils::byte_size_of_array(&shape.specular),
+        utils::pointer_to_array(&shape.specular),
+        gl::STATIC_DRAW,
+    );
+
+    gl::VertexAttribPointer(
+        3,
+        3,
+        gl::FLOAT,
+        gl::FALSE,
+        utils::size_of::<f32>() * 3,
+        ptr::null(),
+    );
+    gl::EnableVertexAttribArray(3);
+
+    //Shininess buffer
+    let mut shininess_vbo_ids: u32 = 4;
+    gl::GenBuffers(1, &mut shininess_vbo_ids as *mut u32);
+    gl::BindBuffer(gl::ARRAY_BUFFER, shininess_vbo_ids);
+
+    gl::BufferData(
+        gl::ARRAY_BUFFER,
+        utils::byte_size_of_array(&shape.shininess),
+        utils::pointer_to_array(&shape.shininess),
+        gl::STATIC_DRAW,
+    );
+
+    gl::VertexAttribPointer(
+        4,
+        1,
+        gl::FLOAT,
+        gl::FALSE,
+        utils::size_of::<f32>() * 1,
+        ptr::null(),
+    );
+    gl::EnableVertexAttribArray(4);
+
+    //Normal buffer
+    let mut normvec_vbo_ids: u32 = 5;
+    gl::GenBuffers(1, &mut normvec_vbo_ids as *mut u32);
+    gl::BindBuffer(gl::ARRAY_BUFFER, normvec_vbo_ids);
+
+    gl::BufferData(
+        gl::ARRAY_BUFFER,
+        utils::byte_size_of_array(&shape.normals),
+        utils::pointer_to_array(&shape.normals),
+        gl::STATIC_DRAW,
+    );
+
+    gl::VertexAttribPointer(
+        5,
+        3,
+        gl::FLOAT,
+        gl::FALSE,
+        utils::size_of::<f32>() * 3,
+        ptr::null(),
+    );
+    gl::EnableVertexAttribArray(5);
 
     let mut ibo_ids: u32 = 0;
     gl::GenBuffers(1, &mut ibo_ids as *mut u32);
@@ -133,21 +200,9 @@ unsafe fn draw_scene(
         gl::UseProgram(node.shader_program);
         gl::BindVertexArray(node.vao_id);
 
-        gl::UniformMatrix4fv(4, 1, gl::TRUE, transformation_matrix.as_ptr());
-        gl::UniformMatrix4fv(7, 1, gl::TRUE, model_matrix.as_ptr());
-        gl::Uniform3fv(8, 1, cam_pos.as_ptr());
-
-        let material = Material {
-            ambient: glm::vec3(1.0, 0.5, 0.31),
-            diffuse: glm::vec3(1.0, 0.5, 0.31),
-            specular: glm::vec3(0.5, 0.5, 0.5),
-            shininess: 32.0,
-        };
-
-        gl::Uniform3fv(9, 1, material.ambient.as_ptr());
-        gl::Uniform3fv(10, 1, material.diffuse.as_ptr());
-        gl::Uniform3fv(11, 1, material.specular.as_ptr());
-        gl::Uniform1f(12, material.shininess);
+        gl::UniformMatrix4fv(10, 1, gl::TRUE, transformation_matrix.as_ptr());
+        gl::UniformMatrix4fv(11, 1, gl::TRUE, model_matrix.as_ptr());
+        gl::Uniform3fv(12, 1, cam_pos.as_ptr());
 
         gl::Uniform3fv(13, 1, light.position.as_ptr());
         gl::Uniform3fv(14, 1, light.ambient.as_ptr());
@@ -226,11 +281,19 @@ fn main() {
                 .link()
         };
 
-        let sphere_1 = Sphere::new(6, [1.0, 0.5, 0.31, 1.0]);
-        let sphere_2 = Sphere::new(6, [0.0, 1.0, 0.0, 1.0]);
-        let sphere_3 = Sphere::new(6, [0.0, 0.0, 1.0, 1.0]);
+        let material = Material {
+            ambient: glm::vec3(1.0, 0.5, 0.31),
+            diffuse: glm::vec3(1.0, 0.5, 0.31),
+            specular: glm::vec3(0.5, 0.5, 0.5),
+            shininess: 32.0,
+        };
 
-        let light_sphere = Sphere::new(6, [1.0, 1.0, 1.0, 1.0]);
+        let material_2 = Material {
+            ambient: glm::vec3(0.2, 0.5, 0.43),
+            diffuse: glm::vec3(0.2, 0.5, 0.43),
+            specular: glm::vec3(0.7, 0.7, 0.7),
+            shininess: 16.0,
+        };
 
         let light = Light {
             position: glm::vec3(0.0, 10.0, 0.0),
@@ -238,6 +301,19 @@ fn main() {
             diffuse: glm::vec3(0.5, 0.5, 0.5),
             specular: glm::vec3(1.0, 1.0, 1.0),
         };
+
+        let light_material = Material {
+            ambient: glm::vec3(1.0, 1.0, 1.0),
+            diffuse: light.diffuse,
+            specular: light.specular,
+            shininess: 32.0,
+        };
+
+        let sphere_1 = Sphere::new(7, material_2);
+        let sphere_2 = Sphere::new(7, material);
+        let sphere_3 = Sphere::new(7, material_2);
+
+        let light_sphere = Sphere::new(6, light_material);
 
         let mut scene = vec![
             scene::SceneNode {

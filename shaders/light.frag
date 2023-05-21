@@ -2,14 +2,13 @@
 
 out vec4 FragColor;
 
-layout(location=1) in vec4 inColor;
-
+layout(location=1) in vec3 ambient_material;
 
 
 void main()
 {
-    FragColor = inColor;
+    vec3 color = ambient_material;
+    FragColor = vec4(color, 1.0);
 }
-
 
 

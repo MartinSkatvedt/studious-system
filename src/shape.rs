@@ -1,5 +1,6 @@
 use lerp::Lerp;
 
+#[derive(Copy, Clone)]
 pub struct Material {
     pub ambient: glm::Vec3,
     pub diffuse: glm::Vec3,
@@ -17,7 +18,7 @@ pub struct Light {
 #[derive(Copy, Clone)]
 pub struct Vertex {
     pub position: glm::Vec3,
-    pub color: [f32; 4],
+    pub material: Material,
 }
 
 #[derive(Copy, Clone)]
@@ -29,9 +30,14 @@ pub struct Triangle {
 
 pub struct Shape {
     pub vertices: Vec<f32>,
-    pub colors: Vec<f32>,
     pub indices: Vec<u32>,
     pub normals: Vec<f32>,
+
+    pub ambient: Vec<f32>,
+    pub diffuse: Vec<f32>,
+    pub specular: Vec<f32>,
+    pub shininess: Vec<f32>,
+
     pub index_count: i32,
 }
 
@@ -45,61 +51,61 @@ pub struct Sphere {
     vertices: Vec<Vertex>,
     triangles: Vec<Triangle>,
     pub shape: Shape,
-    pub shape_color: [f32; 4],
+    pub shape_material: Material,
 }
 
 impl Sphere {
-    pub fn new(detail: u32, color: [f32; 4]) -> Sphere {
+    pub fn new(detail: u32, material: Material) -> Sphere {
         let phi = (1.0 + (5.0 as f32).sqrt()) / 2.0;
         let mut regular_isocahedron = Sphere {
             vertices: vec![
                 Vertex {
                     position: glm::vec3(-1.0, phi, 0.0),
-                    color: color,
+                    material: material,
                 },
                 Vertex {
                     position: glm::vec3(1.0, phi, 0.0),
-                    color: color,
+                    material: material,
                 },
                 Vertex {
                     position: glm::vec3(-1.0, -phi, 0.0),
-                    color: color,
+                    material: material,
                 },
                 Vertex {
                     position: glm::vec3(1.0, -phi, 0.0),
-                    color: color,
+                    material: material,
                 },
                 Vertex {
                     position: glm::vec3(0.0, -1.0, phi),
-                    color: color,
+                    material: material,
                 },
                 Vertex {
                     position: glm::vec3(0.0, 1.0, phi),
-                    color: color,
+                    material: material,
                 },
                 Vertex {
                     position: glm::vec3(0.0, -1.0, -phi),
-                    color: color,
+                    material: material,
                 },
                 Vertex {
                     position: glm::vec3(0.0, 1.0, -phi),
-                    color: color,
+                    material: material,
                 },
                 Vertex {
                     position: glm::vec3(phi, 0.0, -1.0),
-                    color: color,
+                    material: material,
                 },
                 Vertex {
                     position: glm::vec3(phi, 0.0, 1.0),
-                    color: color,
+                    material: material,
                 },
                 Vertex {
                     position: glm::vec3(-phi, 0.0, -1.0),
-                    color: color,
+                    material: material,
                 },
                 Vertex {
                     position: glm::vec3(-phi, 0.0, 1.0),
-                    color: color,
+                    material: material,
                 },
             ],
             triangles: vec![
@@ -128,10 +134,14 @@ impl Sphere {
                 vertices: Vec::new(),
                 indices: Vec::new(),
                 normals: Vec::new(),
-                colors: Vec::new(),
+                ambient: Vec::new(),
+                diffuse: Vec::new(),
+                specular: Vec::new(),
+                shininess: Vec::new(),
+
                 index_count: 0,
             },
-            shape_color: color,
+            shape_material: material,
         };
 
         regular_isocahedron.subdivide(1.0, detail);
@@ -151,7 +161,11 @@ impl Sphere {
             vertices: self.flatten_vertices(),
             indices: self.flatten_cells(),
             normals: self.get_vertex_normals(),
-            colors: self.flatten_colors(),
+            ambient: self.flatten_ambient(),
+            diffuse: self.flatten_diffuse(),
+            specular: self.flatten_specular(),
+            shininess: self.flatten_shininess(),
+
             index_count: (self.triangles.len() * 3) as i32,
         };
     }
@@ -164,10 +178,34 @@ impl Sphere {
         vec
     }
 
-    fn flatten_colors(&self) -> Vec<f32> {
+    fn flatten_ambient(&self) -> Vec<f32> {
         let mut vec = Vec::new();
         for vertex in &self.vertices {
-            vec.extend(&vertex.color);
+            vec.extend(&vertex.material.ambient);
+        }
+        vec
+    }
+
+    fn flatten_diffuse(&self) -> Vec<f32> {
+        let mut vec = Vec::new();
+        for vertex in &self.vertices {
+            vec.extend(&vertex.material.diffuse);
+        }
+        vec
+    }
+
+    fn flatten_specular(&self) -> Vec<f32> {
+        let mut vec = Vec::new();
+        for vertex in &self.vertices {
+            vec.extend(&vertex.material.specular);
+        }
+        vec
+    }
+
+    fn flatten_shininess(&self) -> Vec<f32> {
+        let mut vec = Vec::new();
+        for vertex in &self.vertices {
+            vec.push(vertex.material.shininess);
         }
         vec
     }
@@ -253,32 +291,32 @@ impl Sphere {
                 if j % 2 == 0 {
                     triangle.a = self.add_vertex(Vertex {
                         position: new_vertices[i][k + 1],
-                        color: self.shape_color,
+                        material: self.shape_material,
                     });
 
                     triangle.b = self.add_vertex(Vertex {
                         position: new_vertices[i + 1][k],
-                        color: self.shape_color,
+                        material: self.shape_material,
                     });
 
                     triangle.c = self.add_vertex(Vertex {
                         position: new_vertices[i][k],
-                        color: self.shape_color,
+                        material: self.shape_material,
                     });
                 } else {
                     triangle.a = self.add_vertex(Vertex {
                         position: new_vertices[i][k + 1],
-                        color: self.shape_color,
+                        material: self.shape_material,
                     });
 
                     triangle.b = self.add_vertex(Vertex {
                         position: new_vertices[i + 1][k + 1],
-                        color: self.shape_color,
+                        material: self.shape_material,
                     });
 
                     triangle.c = self.add_vertex(Vertex {
                         position: new_vertices[i + 1][k],
-                        color: self.shape_color,
+                        material: self.shape_material,
                     });
                 }
 
