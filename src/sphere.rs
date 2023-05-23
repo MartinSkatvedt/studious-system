@@ -1,56 +1,11 @@
 use lerp::Lerp;
 
-#[derive(Copy, Clone)]
-pub struct Material {
-    pub ambient: glm::Vec3,
-    pub diffuse: glm::Vec3,
-    pub specular: glm::Vec3,
-    pub shininess: f32,
-}
-
-pub struct Light {
-    pub position: glm::Vec3,
-    pub ambient: glm::Vec3,
-    pub diffuse: glm::Vec3,
-    pub specular: glm::Vec3,
-}
-
-#[derive(Copy, Clone)]
-pub struct Vertex {
-    pub position: glm::Vec3,
-    pub material: Material,
-}
-
-#[derive(Copy, Clone)]
-pub struct Triangle {
-    pub a: usize,
-    pub b: usize,
-    pub c: usize,
-}
-
-pub struct Shape {
-    pub vertices: Vec<f32>,
-    pub indices: Vec<u32>,
-    pub normals: Vec<f32>,
-
-    pub ambient: Vec<f32>,
-    pub diffuse: Vec<f32>,
-    pub specular: Vec<f32>,
-    pub shininess: Vec<f32>,
-
-    pub index_count: i32,
-}
-
-impl Triangle {
-    fn new(a: usize, b: usize, c: usize) -> Triangle {
-        Triangle { a, b, c }
-    }
-}
+use crate::atoms::{Material, Mesh, MeshMaterial, Triangle, Vertex};
 
 pub struct Sphere {
     vertices: Vec<Vertex>,
     triangles: Vec<Triangle>,
-    pub shape: Shape,
+    pub shape: Mesh,
     pub shape_material: Material,
 }
 
@@ -130,14 +85,16 @@ impl Sphere {
                 Triangle::new(8, 6, 7),
                 Triangle::new(9, 8, 1),
             ],
-            shape: Shape {
+            shape: Mesh {
                 vertices: Vec::new(),
                 indices: Vec::new(),
                 normals: Vec::new(),
-                ambient: Vec::new(),
-                diffuse: Vec::new(),
-                specular: Vec::new(),
-                shininess: Vec::new(),
+                material: MeshMaterial {
+                    ambient: Vec::new(),
+                    diffuse: Vec::new(),
+                    specular: Vec::new(),
+                    shininess: Vec::new(),
+                },
 
                 index_count: 0,
             },
@@ -157,17 +114,23 @@ impl Sphere {
     }
 
     fn generate_render_shape(&mut self) {
-        self.shape = Shape {
+        self.shape = Mesh {
             vertices: self.flatten_vertices(),
             indices: self.flatten_cells(),
             normals: self.get_vertex_normals(),
+            material: self.get_mesh_material(),
+
+            index_count: (self.triangles.len() * 3) as i32,
+        };
+    }
+
+    fn get_mesh_material(&self) -> MeshMaterial {
+        MeshMaterial {
             ambient: self.flatten_ambient(),
             diffuse: self.flatten_diffuse(),
             specular: self.flatten_specular(),
             shininess: self.flatten_shininess(),
-
-            index_count: (self.triangles.len() * 3) as i32,
-        };
+        }
     }
 
     fn flatten_vertices(&self) -> Vec<f32> {
