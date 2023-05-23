@@ -1,8 +1,8 @@
 extern crate nalgebra_glm as glm;
 use std::ptr;
-use std::sync::{Arc, Mutex, RwLock};
-use std::thread;
+use std::sync::{Arc, Mutex};
 
+use glm::{vec3, Vec3};
 use glutin::event::{
     DeviceEvent,
     ElementState::{Pressed, Released},
@@ -25,157 +25,6 @@ pub mod utils;
 // initial window size
 const INITIAL_SCREEN_W: u32 = 800;
 const INITIAL_SCREEN_H: u32 = 600;
-
-unsafe fn create_shape_vao(shape: &Mesh) -> u32 {
-    let mut vao_ids: u32 = 0;
-    gl::GenVertexArrays(1, &mut vao_ids as *mut u32);
-    gl::BindVertexArray(vao_ids);
-
-    let mut vbo_ids: u32 = 0;
-    gl::GenBuffers(1, &mut vbo_ids as *mut u32);
-    gl::BindBuffer(gl::ARRAY_BUFFER, vbo_ids);
-
-    gl::BufferData(
-        gl::ARRAY_BUFFER,
-        utils::byte_size_of_array(&shape.vertices),
-        utils::pointer_to_array(&shape.vertices),
-        gl::STATIC_DRAW,
-    );
-
-    gl::VertexAttribPointer(
-        0,
-        3,
-        gl::FLOAT,
-        gl::FALSE,
-        utils::size_of::<f32>() * 3,
-        ptr::null(),
-    );
-    gl::EnableVertexAttribArray(0);
-
-    //Ambient buffer
-    let mut ambient_vbo_ids: u32 = 1;
-    gl::GenBuffers(1, &mut ambient_vbo_ids as *mut u32);
-    gl::BindBuffer(gl::ARRAY_BUFFER, ambient_vbo_ids);
-
-    gl::BufferData(
-        gl::ARRAY_BUFFER,
-        utils::byte_size_of_array(&shape.material.ambient),
-        utils::pointer_to_array(&shape.material.ambient),
-        gl::STATIC_DRAW,
-    );
-
-    gl::VertexAttribPointer(
-        1,
-        3,
-        gl::FLOAT,
-        gl::FALSE,
-        utils::size_of::<f32>() * 3,
-        ptr::null(),
-    );
-    gl::EnableVertexAttribArray(1);
-
-    //Diffuse buffer
-    let mut diffuse_vbo_ids: u32 = 2;
-    gl::GenBuffers(1, &mut diffuse_vbo_ids as *mut u32);
-    gl::BindBuffer(gl::ARRAY_BUFFER, diffuse_vbo_ids);
-
-    gl::BufferData(
-        gl::ARRAY_BUFFER,
-        utils::byte_size_of_array(&shape.material.diffuse),
-        utils::pointer_to_array(&shape.material.diffuse),
-        gl::STATIC_DRAW,
-    );
-
-    gl::VertexAttribPointer(
-        2,
-        3,
-        gl::FLOAT,
-        gl::FALSE,
-        utils::size_of::<f32>() * 3,
-        ptr::null(),
-    );
-    gl::EnableVertexAttribArray(2);
-
-    //Specular buffer
-    let mut specular_vbo_ids: u32 = 3;
-    gl::GenBuffers(1, &mut specular_vbo_ids as *mut u32);
-    gl::BindBuffer(gl::ARRAY_BUFFER, specular_vbo_ids);
-
-    gl::BufferData(
-        gl::ARRAY_BUFFER,
-        utils::byte_size_of_array(&shape.material.specular),
-        utils::pointer_to_array(&shape.material.specular),
-        gl::STATIC_DRAW,
-    );
-
-    gl::VertexAttribPointer(
-        3,
-        3,
-        gl::FLOAT,
-        gl::FALSE,
-        utils::size_of::<f32>() * 3,
-        ptr::null(),
-    );
-    gl::EnableVertexAttribArray(3);
-
-    //Shininess buffer
-    let mut shininess_vbo_ids: u32 = 4;
-    gl::GenBuffers(1, &mut shininess_vbo_ids as *mut u32);
-    gl::BindBuffer(gl::ARRAY_BUFFER, shininess_vbo_ids);
-
-    gl::BufferData(
-        gl::ARRAY_BUFFER,
-        utils::byte_size_of_array(&shape.material.shininess),
-        utils::pointer_to_array(&shape.material.shininess),
-        gl::STATIC_DRAW,
-    );
-
-    gl::VertexAttribPointer(
-        4,
-        1,
-        gl::FLOAT,
-        gl::FALSE,
-        utils::size_of::<f32>() * 1,
-        ptr::null(),
-    );
-    gl::EnableVertexAttribArray(4);
-
-    //Normal buffer
-    let mut normvec_vbo_ids: u32 = 5;
-    gl::GenBuffers(1, &mut normvec_vbo_ids as *mut u32);
-    gl::BindBuffer(gl::ARRAY_BUFFER, normvec_vbo_ids);
-
-    gl::BufferData(
-        gl::ARRAY_BUFFER,
-        utils::byte_size_of_array(&shape.normals),
-        utils::pointer_to_array(&shape.normals),
-        gl::STATIC_DRAW,
-    );
-
-    gl::VertexAttribPointer(
-        5,
-        3,
-        gl::FLOAT,
-        gl::FALSE,
-        utils::size_of::<f32>() * 3,
-        ptr::null(),
-    );
-    gl::EnableVertexAttribArray(5);
-
-    let mut ibo_ids: u32 = 0;
-    gl::GenBuffers(1, &mut ibo_ids as *mut u32);
-    gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, ibo_ids);
-
-    // * Fill it with data
-    gl::BufferData(
-        gl::ELEMENT_ARRAY_BUFFER,
-        utils::byte_size_of_array(&shape.indices),
-        utils::pointer_to_array(&shape.indices),
-        gl::STATIC_DRAW,
-    );
-
-    vao_ids
-}
 
 unsafe fn draw_scene(
     nodes: &mut Vec<scene::SceneNode>,
@@ -336,11 +185,11 @@ fn main() {
 
     let mut scene = vec![
         sun.generate_scene_node(
-            unsafe { create_shape_vao(&sun.get_sphere().shape) },
+            unsafe { sun.get_sphere().shape.create_vao() },
             light_shader.program_id,
         ),
         planet_1.generate_scene_node(
-            unsafe { create_shape_vao(&planet_1.get_sphere().shape) },
+            unsafe { planet_1.get_sphere().shape.create_vao() },
             shape_shader.program_id,
         ),
     ];
@@ -560,16 +409,13 @@ fn main() {
 
                     let ui = imgui.frame();
 
-                    ui.window("Hello world")
+                    ui.window("Settings")
                         .size([300.0, 100.0], Condition::FirstUseEver)
                         .build(|| {
-                            ui.text("Settings");
+                            ui.text("Lighting");
                             ui.separator();
-                            let mouse_pos = ui.io().mouse_pos;
-                            ui.text(format!(
-                                "Mouse Position: ({:.1},{:.1})",
-                                mouse_pos[0], mouse_pos[1]
-                            ));
+
+                            ui.text("Ambient");
                         });
 
                     winit_platform.prepare_render(&ui, &window);
