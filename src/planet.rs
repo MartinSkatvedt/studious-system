@@ -1,11 +1,13 @@
-use crate::{atoms::Material, scene::SceneNode, sphere::Sphere};
+use crate::scenenode::SceneNode;
+use crate::sphere::Sphere;
+use crate::Material;
 
 pub struct Planet {
-    mass: f64,
-    position: glm::Vec3,
-    velocity: glm::Vec3,
-    radius: f64,
-    sphere: Sphere,
+    pub mass: f64,
+    pub position: glm::Vec3,
+    pub velocity: glm::Vec3,
+    pub radius: f64,
+    sphere_object: Sphere,
 }
 
 impl Planet {
@@ -15,24 +17,24 @@ impl Planet {
         velocity: glm::Vec3,
         radius: f64,
         material: Material,
+        detail: u32,
     ) -> Planet {
         Planet {
             mass,
             position,
             velocity,
             radius,
-            sphere: Sphere::new(5, material),
+            sphere_object: Sphere::new(detail, material),
         }
     }
-
-    pub fn get_sphere(&self) -> &Sphere {
-        &self.sphere
+    pub fn get_sphere(&mut self) -> &mut Sphere {
+        &mut self.sphere_object
     }
 
-    pub fn generate_scene_node(&self, vao_id: u32, shader_id: u32) -> SceneNode {
+    pub fn generate_scene_node(&self, shader_id: u32) -> SceneNode {
         SceneNode {
-            vao_id: vao_id,
-            index_count: self.sphere.shape.index_count,
+            vao_id: unsafe { self.sphere_object.mesh.create_vao() },
+            index_count: self.sphere_object.mesh.index_count,
             position: self.position,
             reference_point: glm::vec3(0.0, 0.0, 0.0),
             rotation: glm::vec3(0.0, 0.0, 0.0),

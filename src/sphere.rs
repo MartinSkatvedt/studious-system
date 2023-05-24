@@ -1,12 +1,14 @@
+use crate::material::Material;
+use crate::mesh::{Mesh, MeshMaterial};
+use crate::vertex::{Triangle, Vertex};
 use lerp::Lerp;
-
-use crate::atoms::{Material, Mesh, MeshMaterial, Triangle, Vertex};
 
 pub struct Sphere {
     vertices: Vec<Vertex>,
+    displaced_vertices: Vec<Vertex>,
     triangles: Vec<Triangle>,
-    pub shape: Mesh,
-    pub shape_material: Material,
+    pub mesh: Mesh,
+    pub mesh_material: Material,
 }
 
 impl Sphere {
@@ -85,7 +87,7 @@ impl Sphere {
                 Triangle::new(8, 6, 7),
                 Triangle::new(9, 8, 1),
             ],
-            shape: Mesh {
+            mesh: Mesh {
                 vertices: Vec::new(),
                 indices: Vec::new(),
                 normals: Vec::new(),
@@ -98,12 +100,15 @@ impl Sphere {
 
                 index_count: 0,
             },
-            shape_material: material,
+            mesh_material: material,
+            displaced_vertices: Vec::new(),
         };
 
-        regular_isocahedron.subdivide(1.0, detail);
+        regular_isocahedron.subdivide(detail);
         regular_isocahedron.triangles.drain(0..20);
-        regular_isocahedron.generate_render_shape();
+        regular_isocahedron.displaced_vertices = regular_isocahedron.vertices.clone();
+
+        regular_isocahedron.generate_mesh();
 
         regular_isocahedron
     }
@@ -113,8 +118,8 @@ impl Sphere {
         self.vertices.len() - 1
     }
 
-    fn generate_render_shape(&mut self) {
-        self.shape = Mesh {
+    fn generate_mesh(&mut self) {
+        self.mesh = Mesh {
             vertices: self.flatten_vertices(),
             indices: self.flatten_cells(),
             normals: self.get_vertex_normals(),
@@ -135,7 +140,7 @@ impl Sphere {
 
     fn flatten_vertices(&self) -> Vec<f32> {
         let mut vec = Vec::new();
-        for vertex in &self.vertices {
+        for vertex in &self.displaced_vertices {
             vec.extend(&vertex.position);
         }
         vec
@@ -209,24 +214,17 @@ impl Sphere {
         vec
     }
 
-    fn subdivide(&mut self, radius: f32, detail: u32) {
+    fn subdivide(&mut self, detail: u32) {
         let triangle_copy = self.triangles.clone();
         for triangle in triangle_copy {
             let a = self.vertices[triangle.a].position;
             let b = self.vertices[triangle.b].position;
             let c = self.vertices[triangle.c].position;
-            self.subdivide_triangle(a, b, c, radius, detail);
+            self.subdivide_triangle(a, b, c, detail);
         }
     }
 
-    fn subdivide_triangle(
-        &mut self,
-        a: glm::Vec3,
-        b: glm::Vec3,
-        c: glm::Vec3,
-        radius: f32,
-        detail: u32,
-    ) {
+    fn subdivide_triangle(&mut self, a: glm::Vec3, b: glm::Vec3, c: glm::Vec3, detail: u32) {
         let cols = 2usize.pow(detail);
         let mut new_vertices: Vec<Vec<glm::Vec3>> = vec![];
 
@@ -238,10 +236,9 @@ impl Sphere {
 
             for j in 0..=rows {
                 if j == 0 && i == cols {
-                    new_vertices[i].push(aj.normalize() * radius);
+                    new_vertices[i].push(aj.normalize());
                 } else {
-                    new_vertices[i]
-                        .push(aj.clone().lerp(bj, j as f32 / rows as f32).normalize() * radius);
+                    new_vertices[i].push(aj.clone().lerp(bj, j as f32 / rows as f32).normalize());
                 }
             }
         }
@@ -254,37 +251,47 @@ impl Sphere {
                 if j % 2 == 0 {
                     triangle.a = self.add_vertex(Vertex {
                         position: new_vertices[i][k + 1],
-                        material: self.shape_material,
+                        material: self.mesh_material,
                     });
 
                     triangle.b = self.add_vertex(Vertex {
                         position: new_vertices[i + 1][k],
-                        material: self.shape_material,
+                        material: self.mesh_material,
                     });
 
                     triangle.c = self.add_vertex(Vertex {
                         position: new_vertices[i][k],
-                        material: self.shape_material,
+                        material: self.mesh_material,
                     });
                 } else {
                     triangle.a = self.add_vertex(Vertex {
                         position: new_vertices[i][k + 1],
-                        material: self.shape_material,
+                        material: self.mesh_material,
                     });
 
                     triangle.b = self.add_vertex(Vertex {
                         position: new_vertices[i + 1][k + 1],
-                        material: self.shape_material,
+                        material: self.mesh_material,
                     });
 
                     triangle.c = self.add_vertex(Vertex {
                         position: new_vertices[i + 1][k],
-                        material: self.shape_material,
+                        material: self.mesh_material,
                     });
                 }
 
                 self.triangles.push(triangle);
             }
         }
+    }
+
+    pub fn generate_with_new_detail(&mut self, detail: u32) {
+        let new_sphere = Sphere::new(detail, self.mesh_material);
+
+        self.vertices = new_sphere.vertices;
+        self.triangles = new_sphere.triangles;
+        self.mesh_material = new_sphere.mesh_material;
+        self.displaced_vertices = new_sphere.displaced_vertices;
+        self.mesh = new_sphere.mesh;
     }
 }

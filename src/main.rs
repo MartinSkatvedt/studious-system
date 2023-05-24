@@ -9,25 +9,32 @@ use glutin::event::{
 };
 use glutin::event_loop::ControlFlow;
 
-pub mod atoms;
+pub mod light;
 pub mod planet;
-pub mod scene;
+pub mod scenenode;
 pub mod sphere;
-use atoms::{Light, Material};
 use imgui::{CollapsingHeader, Condition};
+use light::Light;
+use noise::Noise;
 use planet::Planet;
+pub mod material;
+use material::Material;
+pub mod mesh;
+pub mod noise;
 pub mod shader;
 pub mod utils;
+pub mod vertex;
 
 // initial window size
 const INITIAL_SCREEN_W: u32 = 800;
 const INITIAL_SCREEN_H: u32 = 600;
 
 unsafe fn draw_scene(
-    nodes: &mut Vec<scene::SceneNode>,
+    nodes: &mut Vec<scenenode::SceneNode>,
     view_projection_matrix: &glm::Mat4,
     light: &Light,
     cam_pos: &glm::Vec3,
+    noise: &Noise,
 ) {
     for node in nodes {
         let mut model_matrix = glm::Mat4::identity();
@@ -59,6 +66,14 @@ unsafe fn draw_scene(
         gl::Uniform3fv(14, 1, light.ambient.as_ptr());
         gl::Uniform3fv(15, 1, light.diffuse.as_ptr());
         gl::Uniform3fv(16, 1, light.specular.as_ptr());
+
+        gl::Uniform1f(17, noise.strength);
+        gl::Uniform1f(18, noise.base_roughness);
+        gl::Uniform1f(19, noise.roughness);
+        gl::Uniform1f(20, noise.persistence);
+        gl::Uniform3fv(21, 1, noise.center.as_ptr());
+        gl::Uniform1i(22, noise.num_layers as i32);
+        gl::Uniform1f(23, noise.min_value);
 
         gl::DrawElements(
             gl::TRIANGLES,
@@ -122,6 +137,8 @@ fn main() {
         gl::Enable(gl::DEBUG_OUTPUT_SYNCHRONOUS);
     }
 
+    let mut planet_detail = 6;
+
     let shape_shader = unsafe {
         shader::ShaderBuilder::new()
             .attach_file("./shaders/shape.vert")
@@ -157,12 +174,13 @@ fn main() {
         shininess: 32.0,
     };
 
-    let planet_1 = Planet::new(
+    let mut planet_1 = Planet::new(
         100.0,
         glm::vec3(0.0, 0.0, 0.0),
         glm::vec3(0.0, 0.0, 0.0),
         0.0,
         material,
+        planet_detail,
     );
 
     let sun = Planet::new(
@@ -171,17 +189,12 @@ fn main() {
         glm::vec3(0.0, 0.0, 0.0),
         0.0,
         light_material,
+        planet_detail,
     );
 
     let mut scene = vec![
-        sun.generate_scene_node(
-            unsafe { sun.get_sphere().shape.create_vao() },
-            light_shader.program_id,
-        ),
-        planet_1.generate_scene_node(
-            unsafe { planet_1.get_sphere().shape.create_vao() },
-            shape_shader.program_id,
-        ),
+        sun.generate_scene_node(light_shader.program_id),
+        planet_1.generate_scene_node(shape_shader.program_id),
     ];
 
     let first_frame_time = std::time::Instant::now();
@@ -197,6 +210,8 @@ fn main() {
 
     let move_speed: f32 = 10.0;
     let cam_speed: f32 = 100.0;
+
+    let mut noise = noise::Noise::new();
 
     // Start the event loop -- This is where window events are initially handled
     event_loop.run(move |event, _, control_flow| {
@@ -370,6 +385,8 @@ fn main() {
 
                     let ui = imgui.frame();
 
+                    let mut new_detail_ui = planet_detail;
+
                     ui.window("Settings")
                         .size([300.0, 500.0], Condition::FirstUseEver)
                         .build(|| {
@@ -391,12 +408,47 @@ fn main() {
                             }
 
                             ui.separator();
+
+                            ui.slider("Details", 1, 10, &mut new_detail_ui);
+
+                            ui.separator();
+                            ui.text("Noise");
+
+                            ui.slider("strength", 0.0, 10.0, &mut noise.strength);
+
+                            ui.slider("base roughness", 0.0, 10.0, &mut noise.base_roughness);
+                            ui.slider("roughness", 0.0, 10.0, &mut noise.roughness);
+
+                            ui.slider("persistence", 0.0, 10.0, &mut noise.persistence);
+                            ui.slider("layers", 1, 10, &mut noise.num_layers);
+                            ui.slider("min value", 0.0, 10.0, &mut noise.min_value);
+
+                            ui.slider("center x", -1.0, 1.0, &mut noise.center[0]);
+                            ui.slider("center y", -1.0, 1.0, &mut noise.center[1]);
+                            ui.slider("center z", -1.0, 1.0, &mut noise.center[2]);
                         });
+
+                    if new_detail_ui != planet_detail {
+                        planet_detail = new_detail_ui;
+                        scene.remove(1);
+
+                        planet_1
+                            .get_sphere()
+                            .generate_with_new_detail(planet_detail);
+
+                        scene.push(planet_1.generate_scene_node(shape_shader.program_id))
+                    }
 
                     winit_platform.prepare_render(&ui, &window);
                     renderer.render(&mut imgui);
 
-                    draw_scene(&mut scene, &transformation_matrix, &light_source, &cam_pos);
+                    draw_scene(
+                        &mut scene,
+                        &transformation_matrix,
+                        &light_source,
+                        &cam_pos,
+                        &noise,
+                    );
                 }
 
                 // Display the new color buffer on the display
