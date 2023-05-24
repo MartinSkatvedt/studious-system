@@ -1,10 +1,7 @@
 extern crate nalgebra_glm as glm;
 use std::ptr;
-use std::sync::{Arc, Mutex};
 
-use glm::{vec3, Vec3};
 use glutin::event::{
-    DeviceEvent,
     ElementState::{Pressed, Released},
     Event, KeyboardInput,
     VirtualKeyCode::{self, *},
@@ -16,8 +13,8 @@ pub mod atoms;
 pub mod planet;
 pub mod scene;
 pub mod sphere;
-use atoms::{Light, Material, Mesh};
-use imgui::Condition;
+use atoms::{Light, Material};
+use imgui::{CollapsingHeader, Condition};
 use planet::Planet;
 pub mod shader;
 pub mod utils;
@@ -73,8 +70,8 @@ unsafe fn draw_scene(
 }
 
 fn main() {
-    let el = glutin::event_loop::EventLoop::new();
-    let wb = glutin::window::WindowBuilder::new()
+    let event_loop = glutin::event_loop::EventLoop::new();
+    let window_builder = glutin::window::WindowBuilder::new()
         .with_title("studios-systems")
         .with_resizable(true)
         .with_inner_size(glutin::dpi::LogicalSize::new(
@@ -82,19 +79,10 @@ fn main() {
             INITIAL_SCREEN_H,
         ));
 
-    let cb = glutin::ContextBuilder::new().with_vsync(true);
-    let windowed_context = cb.build_windowed(wb, &el).unwrap();
-    let arc_pressed_keys = Arc::new(Mutex::new(Vec::<VirtualKeyCode>::with_capacity(10)));
-
-    let arc_window_size = Arc::new(Mutex::new((INITIAL_SCREEN_W, INITIAL_SCREEN_H, false)));
-
-    let pressed_keys = Arc::clone(&arc_pressed_keys);
-
-    let arc_mouse_delta = Arc::new(Mutex::new((0f32, 0f32)));
-    let mouse_delta = Arc::clone(&arc_mouse_delta);
-
-    // Make a reference of this tuple to send to the render thread
-    let window_size = Arc::clone(&arc_window_size);
+    let context_builder = glutin::ContextBuilder::new().with_vsync(true);
+    let windowed_context = context_builder
+        .build_windowed(window_builder, &event_loop)
+        .unwrap();
 
     let context = unsafe {
         let c = windowed_context.make_current().unwrap();
@@ -119,6 +107,8 @@ fn main() {
     let renderer =
         imgui_opengl_renderer::Renderer::new(&mut imgui, |s| context.get_proc_address(s) as _);
 
+    let mut pressed_keys = Vec::<VirtualKeyCode>::with_capacity(10);
+    let mut window_size = (INITIAL_SCREEN_W, INITIAL_SCREEN_H, false);
     let mut window_aspect_ratio = INITIAL_SCREEN_W as f32 / INITIAL_SCREEN_H as f32;
 
     // Set up openGL
@@ -153,7 +143,7 @@ fn main() {
         shininess: 32.0,
     };
 
-    let light_source = Light {
+    let mut light_source = Light {
         position: glm::vec3(0.0, 10.0, 0.0),
         ambient: glm::vec3(0.2, 0.2, 0.2),
         diffuse: glm::vec3(0.5, 0.5, 0.5),
@@ -209,7 +199,7 @@ fn main() {
     let cam_speed: f32 = 100.0;
 
     // Start the event loop -- This is where window events are initially handled
-    el.run(move |event, _, control_flow| {
+    event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
 
         match event {
@@ -221,9 +211,7 @@ fn main() {
                     "New window size! width: {}, height: {}",
                     physical_size.width, physical_size.height
                 );
-                if let Ok(mut new_size) = arc_window_size.lock() {
-                    *new_size = (physical_size.width, physical_size.height, true);
-                }
+                window_size = (physical_size.width, physical_size.height, true);
             }
 
             // Keep track of currently pressed keys to send to the rendering thread
@@ -240,18 +228,16 @@ fn main() {
                     },
                 ..
             } => {
-                if let Ok(mut keys) = arc_pressed_keys.lock() {
-                    match key_state {
-                        Released => {
-                            if keys.contains(&keycode) {
-                                let i = keys.iter().position(|&k| k == keycode).unwrap();
-                                keys.remove(i);
-                            }
+                match key_state {
+                    Released => {
+                        if pressed_keys.contains(&keycode) {
+                            let i = pressed_keys.iter().position(|&k| k == keycode).unwrap();
+                            pressed_keys.remove(i);
                         }
-                        Pressed => {
-                            if !keys.contains(&keycode) {
-                                keys.push(keycode);
-                            }
+                    }
+                    Pressed => {
+                        if !pressed_keys.contains(&keycode) {
+                            pressed_keys.push(keycode);
                         }
                     }
                 }
@@ -265,15 +251,6 @@ fn main() {
                         *control_flow = ControlFlow::Exit;
                     }
                     _ => {}
-                }
-            }
-            Event::DeviceEvent {
-                event: DeviceEvent::MouseMotion { delta },
-                ..
-            } => {
-                // Accumulate mouse movement
-                if let Ok(mut position) = arc_mouse_delta.lock() {
-                    *position = (position.0 + delta.0 as f32, position.1 + delta.1 as f32);
                 }
             }
 
@@ -297,88 +274,72 @@ fn main() {
                     .io_mut()
                     .update_delta_time(std::time::Duration::from_secs_f32(delta_time));
 
-                println!("FPS: {}", 1.0 / delta_time);
-
                 // Handle resize events
-                if let Ok(mut new_size) = window_size.lock() {
-                    if new_size.2 {
-                        context.resize(glutin::dpi::PhysicalSize::new(new_size.0, new_size.1));
+                if window_size.2 {
+                    context.resize(glutin::dpi::PhysicalSize::new(window_size.0, window_size.1));
 
-                        winit_platform.attach_window(
-                            imgui.io_mut(),
-                            &context.window(),
-                            imgui_winit_support::HiDpiMode::Default,
-                        );
+                    winit_platform.attach_window(
+                        imgui.io_mut(),
+                        &context.window(),
+                        imgui_winit_support::HiDpiMode::Default,
+                    );
 
-                        window_aspect_ratio = new_size.0 as f32 / new_size.1 as f32;
-                        (*new_size).2 = false;
-                        println!("Resized");
-                        unsafe {
-                            gl::Viewport(0, 0, new_size.0 as i32, new_size.1 as i32);
-                        }
+                    window_aspect_ratio = window_size.0 as f32 / window_size.1 as f32;
+                    (window_size).2 = false;
+                    println!("Resized");
+                    unsafe {
+                        gl::Viewport(0, 0, window_size.0 as i32, window_size.1 as i32);
                     }
                 }
 
                 // Handle keyboard input
-                if let Ok(keys) = pressed_keys.lock() {
-                    for key in keys.iter() {
-                        match key {
-                            // The `VirtualKeyCode` enum is defined here:
-                            //    https://docs.rs/winit/0.25.0/winit/event/enum.VirtualKeyCode.html
-                            VirtualKeyCode::D => {
-                                //print
-                                cam_pos += move_speed
-                                    * delta_time
-                                    * glm::normalize(&glm::cross(&cam_front, &cam_up));
-                            }
-                            VirtualKeyCode::A => {
-                                cam_pos -= move_speed
-                                    * delta_time
-                                    * glm::normalize(&glm::cross(&cam_front, &cam_up));
-                            }
-
-                            VirtualKeyCode::Space => {
-                                cam_pos += move_speed * delta_time * cam_up;
-                            }
-                            VirtualKeyCode::LShift => {
-                                cam_pos -= move_speed * delta_time * cam_up;
-                            }
-
-                            VirtualKeyCode::W => {
-                                cam_pos += move_speed * delta_time * cam_front;
-                            }
-                            VirtualKeyCode::S => {
-                                cam_pos -= move_speed * delta_time * cam_front;
-                            }
-
-                            VirtualKeyCode::Up => {
-                                pitch += delta_time * cam_speed;
-                            }
-                            VirtualKeyCode::Down => {
-                                pitch -= delta_time * cam_speed;
-                            }
-
-                            VirtualKeyCode::Left => {
-                                yaw -= delta_time * cam_speed;
-                            }
-                            VirtualKeyCode::Right => {
-                                yaw += delta_time * cam_speed;
-                            }
-
-                            // default handler:
-                            _ => {}
+                for key in pressed_keys.iter() {
+                    match key {
+                        // The `VirtualKeyCode` enum is defined here:
+                        //    https://docs.rs/winit/0.25.0/winit/event/enum.VirtualKeyCode.html
+                        VirtualKeyCode::D => {
+                            //print
+                            cam_pos += move_speed
+                                * delta_time
+                                * glm::normalize(&glm::cross(&cam_front, &cam_up));
                         }
+                        VirtualKeyCode::A => {
+                            cam_pos -= move_speed
+                                * delta_time
+                                * glm::normalize(&glm::cross(&cam_front, &cam_up));
+                        }
+
+                        VirtualKeyCode::Space => {
+                            cam_pos += move_speed * delta_time * cam_up;
+                        }
+                        VirtualKeyCode::LShift => {
+                            cam_pos -= move_speed * delta_time * cam_up;
+                        }
+
+                        VirtualKeyCode::W => {
+                            cam_pos += move_speed * delta_time * cam_front;
+                        }
+                        VirtualKeyCode::S => {
+                            cam_pos -= move_speed * delta_time * cam_front;
+                        }
+
+                        VirtualKeyCode::Up => {
+                            pitch += delta_time * cam_speed;
+                        }
+                        VirtualKeyCode::Down => {
+                            pitch -= delta_time * cam_speed;
+                        }
+
+                        VirtualKeyCode::Left => {
+                            yaw -= delta_time * cam_speed;
+                        }
+                        VirtualKeyCode::Right => {
+                            yaw += delta_time * cam_speed;
+                        }
+
+                        // default handler:
+                        _ => {}
                     }
-                }
-                // Handle mouse movement. delta contains the x and y movement of the mouse since last frame in pixels
-                if let Ok(mut delta) = mouse_delta.lock() {
-                    // == // Optionally access the acumulated mouse movement between
-                    // == // frames here with `delta.0` and `delta.1`
-
-                    // yaw += delta.0 as f32 * 0.1;
-                    //pitch += delta.1 as f32 * 0.1;
-
-                    *delta = (0.0, 0.0); // reset when done
                 }
 
                 unsafe {
@@ -410,12 +371,26 @@ fn main() {
                     let ui = imgui.frame();
 
                     ui.window("Settings")
-                        .size([300.0, 100.0], Condition::FirstUseEver)
+                        .size([300.0, 500.0], Condition::FirstUseEver)
                         .build(|| {
-                            ui.text("Lighting");
+                            ui.text(format!("FPS: {}", (1.0 / delta_time).ceil()));
                             ui.separator();
 
-                            ui.text("Ambient");
+                            if CollapsingHeader::new("Lightsource").build(ui) {
+                                ui.slider("Ambient r", 0.0, 1.0, &mut light_source.ambient.x);
+                                ui.slider("Ambient g", 0.0, 1.0, &mut light_source.ambient.y);
+                                ui.slider("Ambient b", 0.0, 1.0, &mut light_source.ambient.z);
+
+                                ui.slider("Diffuse r", 0.0, 1.0, &mut light_source.diffuse.x);
+                                ui.slider("Diffuse g", 0.0, 1.0, &mut light_source.diffuse.y);
+                                ui.slider("Diffuse b", 0.0, 1.0, &mut light_source.diffuse.z);
+
+                                ui.slider("Specular r", 0.0, 1.0, &mut light_source.specular.x);
+                                ui.slider("Specular g", 0.0, 1.0, &mut light_source.specular.y);
+                                ui.slider("Specular b", 0.0, 1.0, &mut light_source.specular.z);
+                            }
+
+                            ui.separator();
                         });
 
                     winit_platform.prepare_render(&ui, &window);
