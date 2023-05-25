@@ -154,7 +154,7 @@ fn main() {
     };
 
     let material = Material {
-        ambient: glm::vec3(1.0, 0.5, 0.31),
+        ambient: glm::vec3(1.0, 0.7, 0.81),
         diffuse: glm::vec3(1.0, 0.5, 0.31),
         specular: glm::vec3(0.5, 0.5, 0.5),
         shininess: 32.0,
@@ -419,7 +419,7 @@ fn main() {
                             ui.slider("base roughness", 0.0, 10.0, &mut noise.base_roughness);
                             ui.slider("roughness", 0.0, 10.0, &mut noise.roughness);
 
-                            ui.slider("persistence", 0.0, 10.0, &mut noise.persistence);
+                            ui.slider("persistence", 0.0, 1.0, &mut noise.persistence);
                             ui.slider("layers", 1, 10, &mut noise.num_layers);
                             ui.slider("min value", 0.0, 10.0, &mut noise.min_value);
 
@@ -441,6 +441,8 @@ fn main() {
 
                     winit_platform.prepare_render(&ui, &window);
                     renderer.render(&mut imgui);
+
+                    scene[1].rotation.y += 0.005;
 
                     draw_scene(
                         &mut scene,
